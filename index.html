@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="description" content="A head-tracked 3D perspective experiment. Your monitor becomes a window into a small cuboid room." />
+  <title>3D Shelf &mdash; head-tracked perspective</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="preconnect" href="https://storage.googleapis.com" crossorigin />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <canvas id="scene" aria-label="3D scene"></canvas>
+  <video id="cam" playsinline muted autoplay aria-hidden="true"></video>
+
+  <!-- Preview corner -->
+  <div id="preview" class="hidden" aria-hidden="true">
+    <div class="preview-frame"></div>
+  </div>
+
+  <!-- Welcome / start screen -->
+  <div id="startOverlay" class="overlay">
+    <div class="welcome" role="dialog" aria-labelledby="welcome-title">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
+          <defs>
+            <linearGradient id="brandGrad" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#6b7cff"/>
+              <stop offset="1" stop-color="#a35cff"/>
+            </linearGradient>
+          </defs>
+          <path d="M8 12 L20 6 L32 12 L32 28 L20 34 L8 28 Z" stroke="url(#brandGrad)" stroke-width="1.6" stroke-linejoin="round" fill="none"/>
+          <path d="M8 12 L20 18 L32 12" stroke="url(#brandGrad)" stroke-width="1.6" stroke-linejoin="round" fill="none"/>
+          <path d="M20 18 L20 34" stroke="url(#brandGrad)" stroke-width="1.6" fill="none"/>
+        </svg>
+        <div class="brand-text">
+          <h1 id="welcome-title">3D Shelf</h1>
+          <p class="tag">A head-tracked window into your monitor</p>
+        </div>
+      </div>
+
+      <p class="lede">
+        Your screen becomes a shallow room. As you move your head, off-axis perspective makes the objects inside feel anchored behind the glass.
+      </p>
+
+      <ul class="features">
+        <li>
+          <svg viewBox="0 0 24 24" class="fi" aria-hidden="true"><path d="M9 12 L11 14 L15 10" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+          <span>Runs entirely in your browser &mdash; nothing is uploaded</span>
+        </li>
+        <li>
+          <svg viewBox="0 0 24 24" class="fi" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M8 21 H16 M12 17 V21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <span>Desktop or laptop with a webcam works best</span>
+        </li>
+        <li>
+          <svg viewBox="0 0 24 24" class="fi" aria-hidden="true"><path d="M12 3 V6 M12 18 V21 M3 12 H6 M18 12 H21 M5.5 5.5 L7.5 7.5 M16.5 16.5 L18.5 18.5 M5.5 18.5 L7.5 16.5 M16.5 7.5 L18.5 5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="12" r="3.5" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+          <span>Sit 30&ndash;80 cm away, well-lit, facing the screen</span>
+        </li>
+      </ul>
+
+      <button id="startBtn" class="btn btn-primary btn-large">
+        <span class="btn-content">
+          <span class="btn-label">Start</span>
+          <svg class="btn-arrow" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10 H16 M11 5 L16 10 L11 15" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <span class="btn-loader" aria-hidden="true"><span class="spinner"></span><span id="loaderText">Starting&hellip;</span></span>
+      </button>
+
+      <p class="fineprint">You&apos;ll be asked for camera permission. Press <kbd>F</kbd> for fullscreen once inside.</p>
+    </div>
+  </div>
+
+  <!-- Error dialog -->
+  <div id="errorOverlay" class="overlay hidden">
+    <div class="welcome error-card" role="alertdialog" aria-labelledby="err-title">
+      <div class="err-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M12 7 V13 M12 16 V17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </div>
+      <h2 id="err-title">Couldn&rsquo;t start</h2>
+      <p id="errMessage" class="lede">Something went wrong.</p>
+      <div class="err-actions">
+        <button id="errRetryBtn" class="btn btn-primary">Try again</button>
+      </div>
+      <details class="err-help">
+        <summary>Troubleshooting</summary>
+        <ul>
+          <li>Grant camera permission for this site in your browser&rsquo;s address bar.</li>
+          <li>Only one app at a time can use the camera &mdash; close Zoom, Meet, etc.</li>
+          <li>If running locally, open via <code>http://localhost</code> &mdash; not <code>file://</code>.</li>
+          <li>Try Chrome, Edge, or Firefox on desktop.</li>
+        </ul>
+      </details>
+    </div>
+  </div>
+
+  <!-- Runtime HUD -->
+  <div id="hud" class="hidden">
+    <div class="hud-top">
+      <div id="trackDot" class="track-pill" data-state="waiting">
+        <span class="dot"></span>
+        <span class="label">Waiting</span>
+      </div>
+      <div class="hud-buttons">
+        <button id="fsBtn" class="icon-btn" title="Fullscreen (F)" aria-label="Toggle fullscreen">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9 V4 H9 M20 9 V4 H15 M4 15 V20 H9 M20 15 V20 H15" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button id="uiToggle" class="icon-btn" title="Settings" aria-label="Open settings" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6 H12 M17 6 H20 M4 12 H7 M12 12 H20 M4 18 H15 M20 18 H20" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/><circle cx="14.5" cy="6" r="2" stroke="currentColor" stroke-width="1.7" fill="var(--bg-surface)"/><circle cx="9.5" cy="12" r="2" stroke="currentColor" stroke-width="1.7" fill="var(--bg-surface)"/><circle cx="17.5" cy="18" r="2" stroke="currentColor" stroke-width="1.7" fill="var(--bg-surface)"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <aside id="panel" class="hidden" aria-label="Settings">
+      <header class="panel-header">
+        <h2>Settings</h2>
+        <button id="closePanel" class="icon-btn small" aria-label="Close settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6 L18 18 M18 6 L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+      </header>
+
+      <section class="group">
+        <h3>Screen</h3>
+        <div class="control">
+          <div class="control-row"><label for="monW">Monitor width</label><span class="value"><span id="monWv">500</span><span class="unit">mm</span></span></div>
+          <input type="range" id="monW" min="200" max="900" step="10" value="500" />
+        </div>
+        <div class="control">
+          <div class="control-row"><label for="monH">Monitor height</label><span class="value"><span id="monHv">300</span><span class="unit">mm</span></span></div>
+          <input type="range" id="monH" min="120" max="600" step="10" value="300" />
+        </div>
+        <div class="control">
+          <div class="control-row"><label for="depth">Box depth</label><span class="value"><span id="depthv">450</span><span class="unit">mm</span></span></div>
+          <input type="range" id="depth" min="150" max="900" step="10" value="450" />
+        </div>
+      </section>
+
+      <section class="group">
+        <h3>Head tracking</h3>
+        <div class="control">
+          <div class="control-row"><label for="fov">Camera FOV</label><span class="value"><span id="fovv">60</span><span class="unit">&deg;</span></span></div>
+          <input type="range" id="fov" min="40" max="90" step="1" value="60" />
+        </div>
+        <div class="control">
+          <div class="control-row"><label for="ipd">Your IPD</label><span class="value"><span id="ipdv">63</span><span class="unit">mm</span></span></div>
+          <input type="range" id="ipd" min="55" max="72" step="0.5" value="63" />
+        </div>
+        <div class="control">
+          <div class="control-row"><label for="camY">Cam above screen top</label><span class="value"><span id="camYv">15</span><span class="unit">mm</span></span></div>
+          <input type="range" id="camY" min="-100" max="200" step="5" value="15" />
+        </div>
+        <div class="control">
+          <div class="control-row"><label for="smooth">Smoothing</label><span class="value"><span id="smoothv">0.75</span></span></div>
+          <input type="range" id="smooth" min="0" max="0.95" step="0.05" value="0.75" />
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="flipX" checked />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span class="switch-label">Flip head X <span class="switch-hint">if parallax feels reversed</span></span>
+        </label>
+      </section>
+
+      <section class="group">
+        <h3>Display</h3>
+        <label class="switch">
+          <input type="checkbox" id="showCam" checked />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span class="switch-label">Webcam preview</span>
+        </label>
+      </section>
+
+      <div class="panel-footer">
+        <button id="resetBtn" class="btn btn-secondary btn-small">Reset to defaults</button>
+      </div>
+
+      <div id="stats" class="stats" aria-live="polite">
+        <div class="stat"><span class="stat-k">state</span><span class="stat-v" id="statState">waiting</span></div>
+        <div class="stat"><span class="stat-k">eye</span><span class="stat-v" id="statEye">&mdash;</span></div>
+        <div class="stat"><span class="stat-k">fps</span><span class="stat-v" id="statFps">&mdash;</span></div>
+      </div>
+    </aside>
+  </div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
