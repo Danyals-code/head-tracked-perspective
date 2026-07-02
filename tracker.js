@@ -8,7 +8,7 @@ export async function createTracker() {
   const opts = {
     baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
     outputFaceBlendshapes: false,
-    outputFacialTransformationMatrixes: false,
+    outputFacialTransformationMatrixes: true,
     runningMode: "VIDEO",
     numFaces: 1,
   };

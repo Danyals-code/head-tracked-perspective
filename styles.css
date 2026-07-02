@@ -655,6 +655,11 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   border-top: 1px solid var(--border);
 }
 .panel-footer .btn { width: 100%; }
+.panel-footer-row {
+  display: flex;
+  gap: 8px;
+}
+.panel-footer-row .btn { flex: 1; }
 
 /* Stats */
 .stats {
@@ -694,6 +699,14 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+@keyframes flashPulse {
+  0%   { box-shadow: 0 0 0 0 var(--accent-glow); }
+  60%  { box-shadow: 0 0 0 10px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.icon-btn.flash, .btn.flash {
+  animation: flashPulse 320ms var(--ease);
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }

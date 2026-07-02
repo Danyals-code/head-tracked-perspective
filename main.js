@@ -2,37 +2,39 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 import { createTracker, IRIS_A, IRIS_B } from "./tracker.js";
 
 // ---------- DOM ----------
-const canvas       = document.getElementById("scene");
-const video        = document.getElementById("cam");
-const startOverlay = document.getElementById("startOverlay");
-const startBtn     = document.getElementById("startBtn");
-const loaderText   = document.getElementById("loaderText");
-const errorOverlay = document.getElementById("errorOverlay");
-const errMessage   = document.getElementById("errMessage");
-const errRetryBtn  = document.getElementById("errRetryBtn");
-const hud          = document.getElementById("hud");
-const uiToggle     = document.getElementById("uiToggle");
-const fsBtn        = document.getElementById("fsBtn");
-const panel        = document.getElementById("panel");
-const closePanel   = document.getElementById("closePanel");
-const resetBtn     = document.getElementById("resetBtn");
-const trackDot     = document.getElementById("trackDot");
-const trackLabel   = trackDot.querySelector(".label");
-const statState    = document.getElementById("statState");
-const statEye      = document.getElementById("statEye");
-const statFps      = document.getElementById("statFps");
+const canvas         = document.getElementById("scene");
+const video          = document.getElementById("cam");
+const startOverlay   = document.getElementById("startOverlay");
+const startBtn       = document.getElementById("startBtn");
+const loaderText     = document.getElementById("loaderText");
+const errorOverlay   = document.getElementById("errorOverlay");
+const errMessage     = document.getElementById("errMessage");
+const errRetryBtn    = document.getElementById("errRetryBtn");
+const hud            = document.getElementById("hud");
+const uiToggle       = document.getElementById("uiToggle");
+const fsBtn          = document.getElementById("fsBtn");
+const recenterBtnHud = document.getElementById("recenterBtnHud");
+const recenterBtn    = document.getElementById("recenterBtn");
+const panel          = document.getElementById("panel");
+const closePanel     = document.getElementById("closePanel");
+const resetBtn       = document.getElementById("resetBtn");
+const trackDot       = document.getElementById("trackDot");
+const trackLabel     = trackDot.querySelector(".label");
+const statState      = document.getElementById("statState");
+const statEye        = document.getElementById("statEye");
+const statFps        = document.getElementById("statFps");
 
 // ---------- Params (all mm unless noted) ----------
 const DEFAULTS = {
   monW: 500, monH: 300, depth: 450,
-  fov: 60, ipd: 63, smooth: 0.75,
-  camY: 15,
+  fov: 60, ipd: 63, smooth: 0.80,
   showCam: true, flipX: true,
 };
 const p = { ...DEFAULTS };
 
-const sliderIds = ["monW", "monH", "depth", "fov", "ipd", "smooth", "camY"];
+const sliderIds = ["monW", "monH", "depth", "fov", "ipd", "smooth"];
 const roomKeys  = new Set(["monW", "monH", "depth"]);
+const scaleKeys = new Set(["fov", "ipd"]);
 
 function bindSliders() {
   sliderIds.forEach((id) => {
@@ -44,6 +46,7 @@ function bindSliders() {
       p[id] = parseFloat(el.value);
       label.textContent = formatValue(id, p[id]);
       if (roomKeys.has(id)) rebuildRoom();
+      if (scaleKeys.has(id)) scaleRefreshRequested = true;
     });
   });
 }
@@ -76,6 +79,7 @@ function resetToDefaults() {
   document.getElementById("flipX").checked   = p.flipX;
   video.classList.toggle("hidden-preview", !p.showCam);
   rebuildRoom();
+  recenterRequested = true;
 }
 
 bindSliders();
@@ -83,27 +87,36 @@ bindSwitches();
 resetBtn.addEventListener("click", resetToDefaults);
 
 // ---------- UI panel ----------
-function openPanel() {
-  panel.classList.remove("hidden");
-  uiToggle.setAttribute("aria-expanded", "true");
-}
-function closePanelFn() {
-  panel.classList.add("hidden");
-  uiToggle.setAttribute("aria-expanded", "false");
-}
-uiToggle.addEventListener("click", () => {
-  panel.classList.contains("hidden") ? openPanel() : closePanelFn();
-});
+function openPanel()  { panel.classList.remove("hidden"); uiToggle.setAttribute("aria-expanded", "true"); }
+function closePanelFn() { panel.classList.add("hidden");  uiToggle.setAttribute("aria-expanded", "false"); }
+uiToggle.addEventListener("click", () => panel.classList.contains("hidden") ? openPanel() : closePanelFn());
 closePanel.addEventListener("click", closePanelFn);
 
 fsBtn.addEventListener("click", () => {
   if (document.fullscreenElement) document.exitFullscreen();
   else document.documentElement.requestFullscreen().catch(() => {});
 });
+
+function requestRecenter() {
+  recenterRequested = true;
+  flashRecenter();
+}
+recenterBtn.addEventListener("click", requestRecenter);
+recenterBtnHud.addEventListener("click", requestRecenter);
+
+function flashRecenter() {
+  [recenterBtn, recenterBtnHud].forEach((b) => {
+    if (!b) return;
+    b.classList.add("flash");
+    setTimeout(() => b.classList.remove("flash"), 300);
+  });
+}
+
 window.addEventListener("keydown", (e) => {
-  if (e.target && (e.target.tagName === "INPUT")) return;
+  if (e.target && e.target.tagName === "INPUT") return;
   if (e.key === "f" || e.key === "F") fsBtn.click();
   else if (e.key === "s" || e.key === "S") uiToggle.click();
+  else if (e.key === "r" || e.key === "R") requestRecenter();
   else if (e.key === "Escape" && !panel.classList.contains("hidden")) closePanelFn();
 });
 
@@ -113,13 +126,12 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight, false);
 renderer.setClearColor(0x05070b);
 
-const scene = new THREE.Scene();
+const scene  = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, 1, 10, 6000);
 
 const roomGroup = new THREE.Group();
 scene.add(roomGroup);
 
-// Lights (module scope so they persist across room rebuilds)
 scene.add(new THREE.AmbientLight(0xffffff, 0.32));
 const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
 keyLight.position.set(220, 420, 550);
@@ -127,7 +139,7 @@ scene.add(keyLight);
 const fillLight = new THREE.DirectionalLight(0x8ab4ff, 0.38);
 fillLight.position.set(-320, 120, 320);
 scene.add(fillLight);
-const interiorLight = new THREE.PointLight(0xffd9a8, 0.6, 2000, 2);
+const interiorLight = new THREE.PointLight(0xffd9a8, 0.7, 2500, 2);
 scene.add(interiorLight);
 
 function disposeGroup(group) {
@@ -135,20 +147,65 @@ function disposeGroup(group) {
     if (obj.geometry) obj.geometry.dispose();
     if (obj.material) {
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-      mats.forEach((m) => m.dispose());
+      mats.forEach((m) => {
+        if (m.map) m.map.dispose();
+        m.dispose();
+      });
     }
   });
   group.clear();
+}
+
+// A subtle grid texture so back-wall parallax is visible even from small head shifts.
+function makeGridTexture(cellMm, majorEvery, hue) {
+  const size = 512;
+  const c = document.createElement("canvas");
+  c.width = size;
+  c.height = size;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = hue;
+  ctx.fillRect(0, 0, size, size);
+  const step = size / 8; // 8 cells per texture tile
+  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 8; i++) {
+    const v = Math.round(i * step) + 0.5;
+    ctx.beginPath(); ctx.moveTo(v, 0); ctx.lineTo(v, size); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, v); ctx.lineTo(size, v); ctx.stroke();
+  }
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i <= 8; i += majorEvery) {
+    const v = Math.round(i * step) + 0.5;
+    ctx.beginPath(); ctx.moveTo(v, 0); ctx.lineTo(v, size); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, v); ctx.lineTo(size, v); ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  const cellsPerRepeat = 8;
+  const repeat = 1 / (cellsPerRepeat * cellMm);
+  return { tex, repeatPerMm: repeat };
 }
 
 function rebuildRoom() {
   disposeGroup(roomGroup);
   const w = p.monW, h = p.monH, d = p.depth;
 
-  const wallMat  = new THREE.MeshStandardMaterial({ color: 0x2a303c, roughness: 0.92 });
-  const backMat  = new THREE.MeshStandardMaterial({ color: 0x1a2030, roughness: 0.95 });
-  const floorMat = new THREE.MeshStandardMaterial({ color: 0x3a2f22, roughness: 0.85 });
-  const shelfMat = new THREE.MeshStandardMaterial({ color: 0x8a6a44, roughness: 0.6 });
+  const backGrid  = makeGridTexture(30, 4, "#1a2030");
+  const wallGrid  = makeGridTexture(60, 4, "#242a36");
+  const floorGrid = makeGridTexture(50, 4, "#2f2820");
+
+  backGrid.tex.repeat.set(w * backGrid.repeatPerMm, h * backGrid.repeatPerMm);
+  const wallTexL = wallGrid.tex.clone(); wallTexL.needsUpdate = true; wallTexL.repeat.set(d * wallGrid.repeatPerMm, h * wallGrid.repeatPerMm);
+  const wallTexR = wallGrid.tex.clone(); wallTexR.needsUpdate = true; wallTexR.repeat.set(d * wallGrid.repeatPerMm, h * wallGrid.repeatPerMm);
+  const ceilTex  = wallGrid.tex.clone(); ceilTex.needsUpdate  = true; ceilTex.repeat.set(w * wallGrid.repeatPerMm,  d * wallGrid.repeatPerMm);
+  floorGrid.tex.repeat.set(w * floorGrid.repeatPerMm, d * floorGrid.repeatPerMm);
+
+  const wallMat  = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, map: wallTexL });
+  const wallMatR = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, map: wallTexR });
+  const backMat  = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, map: backGrid.tex });
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, map: floorGrid.tex });
+  const ceilMat  = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, map: ceilTex });
 
   const back = new THREE.Mesh(new THREE.PlaneGeometry(w, h), backMat);
   back.position.set(0, 0, -d);
@@ -159,7 +216,7 @@ function rebuildRoom() {
   left.rotation.y = Math.PI / 2;
   roomGroup.add(left);
 
-  const right = new THREE.Mesh(new THREE.PlaneGeometry(d, h), wallMat);
+  const right = new THREE.Mesh(new THREE.PlaneGeometry(d, h), wallMatR);
   right.position.set(w / 2, 0, -d / 2);
   right.rotation.y = -Math.PI / 2;
   roomGroup.add(right);
@@ -169,45 +226,42 @@ function rebuildRoom() {
   floor.rotation.x = -Math.PI / 2;
   roomGroup.add(floor);
 
-  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(w, d), wallMat);
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(w, d), ceilMat);
   ceil.position.set(0, h / 2, -d / 2);
   ceil.rotation.x = Math.PI / 2;
   roomGroup.add(ceil);
 
-  const shelfT = 8;
-  const shelfYs = [];
-  const shelfCount = 2;
-  for (let i = 1; i <= shelfCount; i++) {
-    const y = -h / 2 + (h * i / (shelfCount + 1));
-    shelfYs.push(y);
-    const plank = new THREE.Mesh(new THREE.BoxGeometry(w - 20, shelfT, d - 20), shelfMat);
-    plank.position.set(0, y, -d / 2);
-    roomGroup.add(plank);
-  }
+  placeObjects();
 
-  placeObjects(-h / 2, 0);
-  shelfYs.forEach((y, i) => placeObjects(y + shelfT / 2, i + 1));
-
-  interiorLight.position.set(0, h * 0.32, -d * 0.25);
+  interiorLight.position.set(0, h * 0.32, -d * 0.35);
   interiorLight.distance = Math.max(w, h, d) * 3.5;
 }
 
-function placeObjects(baseY, tier) {
-  const w = p.monW, d = p.depth;
-  const s = 22 + tier * 4;
+function placeObjects() {
+  const w = p.monW, h = p.monH, d = p.depth;
+  const floorY = -h / 2;
+
+  // Cluster of 4 objects on the floor, close together, staggered in depth.
+  // Sizes scale a little with monitor size so they read at any dimension.
+  const s = Math.min(w, h) * 0.09;
+
   const items = [
-    { x: -w * 0.32, z: -d * 0.55, kind: "sphere", color: 0xe14b5a },
-    { x:  w * 0.02, z: -d * 0.75, kind: "cube",   color: 0x4a8ef2 },
-    { x:  w * 0.34, z: -d * 0.60, kind: "torus",  color: 0x38c17a },
+    { kind: "sphere",   r: s * 1.05,           x: -w * 0.12, z: -d * 0.55, color: 0xe14b3c },
+    { kind: "cube",     side: s * 1.6,         x:  w * 0.10, z: -d * 0.68, color: 0x4a8ef2 },
+    { kind: "cylinder", r: s * 0.7, hh: s * 1.9, x: -w * 0.02, z: -d * 0.80, color: 0xe6b34a },
+    { kind: "torus",    R: s * 0.9, r: s * 0.28, x:  w * 0.22, z: -d * 0.58, color: 0x38c17a },
   ];
+
   items.forEach((it) => {
-    let geom, restH;
-    if (it.kind === "sphere")     { geom = new THREE.SphereGeometry(s, 32, 24); restH = s; }
-    else if (it.kind === "cube")  { geom = new THREE.BoxGeometry(s * 1.5, s * 1.5, s * 1.5); restH = s * 0.75; }
-    else                          { geom = new THREE.TorusGeometry(s, s * 0.32, 20, 40); restH = s * 0.32; }
-    const mat = new THREE.MeshStandardMaterial({ color: it.color, roughness: 0.4, metalness: 0.12 });
+    let geom, restH, rotX = 0;
+    if (it.kind === "sphere")        { geom = new THREE.SphereGeometry(it.r, 40, 28); restH = it.r; }
+    else if (it.kind === "cube")     { geom = new THREE.BoxGeometry(it.side, it.side, it.side); restH = it.side / 2; }
+    else if (it.kind === "cylinder") { geom = new THREE.CylinderGeometry(it.r, it.r, it.hh, 40); restH = it.hh / 2; }
+    else /* torus */                 { geom = new THREE.TorusGeometry(it.R, it.r, 20, 44); restH = it.r; rotX = Math.PI / 2; }
+    const mat = new THREE.MeshStandardMaterial({ color: it.color, roughness: 0.4, metalness: 0.18 });
     const mesh = new THREE.Mesh(geom, mat);
-    mesh.position.set(it.x, baseY + restH, it.z);
+    mesh.rotation.x = rotX;
+    mesh.position.set(it.x, floorY + restH, it.z);
     roomGroup.add(mesh);
   });
 }
@@ -232,13 +286,40 @@ window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight, false);
 });
 
-// ---------- Face tracking ----------
+// ---------- Face tracking (matrix-based) ----------
 let tracker = null;
 let lastVideoTime = -1;
-let firstDetection = true;
+
+// Scale converts MediaPipe canonical head-pose units to physical millimetres.
+// Auto-calibrated from your IPD on first detection and whenever FOV/IPD changes.
+let scaleFactor = 1;
+let scaleRefreshRequested = true;
+let recenterRequested     = true;   // triggers on first detection too
+let hasCalibrated         = false;
+
+const offset = { x: 0, y: 0 };
+const raw    = { x: 0, y: 0, z: 500 };
+const eye    = new THREE.Vector3(0, 0, 500);
+const target = new THREE.Vector3(0, 0, 500);
 let framesSinceDetection = 999;
-const eye = new THREE.Vector3(0, 0, 500);
-const rawEye = new THREE.Vector3(0, 0, 500);
+
+function computeScale(matData, landmarks, vw, vh) {
+  const A = landmarks[IRIS_A];
+  const B = landmarks[IRIS_B];
+  if (!A || !B) return null;
+  const dx = (B.x - A.x) * vw;
+  const dy = (B.y - A.y) * vh;
+  const ipdPx = Math.hypot(dx, dy);
+  if (ipdPx < 4) return null;
+
+  const fovRad = p.fov * Math.PI / 180;
+  const fPx = vw / (2 * Math.tan(fovRad / 2));
+  const zMm = fPx * p.ipd / ipdPx;    // physical distance from camera to eye plane
+
+  const rawZ = -matData[14];          // MediaPipe: camera looks down -Z, head is at negative Z
+  if (Math.abs(rawZ) < 0.05) return null;
+  return zMm / rawZ;
+}
 
 async function startCamera() {
   const stream = await navigator.mediaDevices.getUserMedia({
@@ -275,7 +356,6 @@ async function start() {
     loaderText.textContent = "Loading face tracker…";
     tracker = await createTracker();
     loaderText.textContent = "Ready";
-    // brief hold so users see "Ready"
     await new Promise((r) => setTimeout(r, 200));
     startOverlay.classList.add("hidden");
     errorOverlay.classList.add("hidden");
@@ -293,38 +373,10 @@ errRetryBtn.addEventListener("click", () => {
   startOverlay.classList.remove("hidden");
 });
 
-function estimateEyeFromLandmarks(landmarks, vw, vh) {
-  const A = landmarks[IRIS_A];
-  const B = landmarks[IRIS_B];
-  if (!A || !B) return null;
-
-  const ax = A.x * vw, ay = A.y * vh;
-  const bx = B.x * vw, by = B.y * vh;
-  const midX = (ax + bx) / 2;
-  const midY = (ay + by) / 2;
-  const dx = bx - ax, dy = by - ay;
-  const ipdPx = Math.hypot(dx, dy);
-  if (ipdPx < 4) return null;
-
-  const fovRad = p.fov * Math.PI / 180;
-  const fPx = vw / (2 * Math.tan(fovRad / 2));
-
-  const z  = fPx * p.ipd / ipdPx;
-  const cx = (midX - vw / 2) * z / fPx;
-  const cy = (vh / 2 - midY) * z / fPx;
-
-  return {
-    x: p.flipX ? -cx : cx,
-    y: cy + p.monH / 2 + p.camY,
-    z,
-  };
-}
-
 // ---------- Track / render loop ----------
 let rafRunning = false;
 let fpsFrames = 0;
 let fpsLast = performance.now();
-let fpsValue = 0;
 
 function setTrackState(state, label) {
   trackDot.dataset.state = state;
@@ -334,22 +386,51 @@ function setTrackState(state, label) {
 
 function loop() {
   let detected = false;
+
   if (tracker && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
     const result = tracker.detectForVideo(video, performance.now());
-    if (result.faceLandmarks && result.faceLandmarks.length > 0) {
-      const est = estimateEyeFromLandmarks(result.faceLandmarks[0], video.videoWidth, video.videoHeight);
-      if (est) {
-        rawEye.set(est.x, est.y, est.z);
-        if (firstDetection) {
-          eye.copy(rawEye);
-          firstDetection = false;
-        } else {
-          eye.lerp(rawEye, 1 - p.smooth);
+    const matrices = result.facialTransformationMatrixes;
+    const faces = result.faceLandmarks;
+
+    if (matrices && matrices.length > 0 && faces && faces.length > 0) {
+      const mat = matrices[0].data;
+      const landmarks = faces[0];
+      const vw = video.videoWidth, vh = video.videoHeight;
+
+      if (scaleRefreshRequested || recenterRequested || !hasCalibrated) {
+        const s = computeScale(mat, landmarks, vw, vh);
+        if (s && s > 0 && isFinite(s)) {
+          const ratio = s / scaleFactor;
+          scaleFactor = s;
+          // Preserve calibration when scale changes: offsets are in scaled units.
+          if (hasCalibrated && !recenterRequested) {
+            offset.x *= ratio;
+            offset.y *= ratio;
+          }
         }
-        detected = true;
-        framesSinceDetection = 0;
+        scaleRefreshRequested = false;
       }
+
+      const rawX = (p.flipX ? -mat[12] : mat[12]) * scaleFactor;
+      const rawY =  mat[13] * scaleFactor;
+      const rawZ = -mat[14] * scaleFactor;
+      raw.x = rawX; raw.y = rawY; raw.z = rawZ;
+
+      if (recenterRequested) {
+        offset.x = rawX;
+        offset.y = rawY;
+        recenterRequested = false;
+        hasCalibrated = true;
+        // snap current eye so smoothing doesn't drag from a stale pose
+        target.set(0, 0, rawZ);
+        eye.copy(target);
+      } else {
+        target.set(rawX - offset.x, rawY - offset.y, rawZ);
+        eye.lerp(target, 1 - p.smooth);
+      }
+      detected = true;
+      framesSinceDetection = 0;
     }
   }
   if (!detected) framesSinceDetection++;
@@ -357,19 +438,17 @@ function loop() {
   setOffAxisProjection(camera, eye.x, eye.y, eye.z, p.monW, p.monH, 10, 6000);
   renderer.render(scene, camera);
 
-  // Track state
-  if (firstDetection)          setTrackState("waiting", "Waiting for face");
-  else if (framesSinceDetection > 30) setTrackState("lost", "Face lost");
-  else                         setTrackState("tracking", "Tracking");
+  if (!hasCalibrated)                 setTrackState("waiting", "Waiting for face");
+  else if (framesSinceDetection > 30) setTrackState("lost",    "Face lost");
+  else                                setTrackState("tracking", "Tracking");
 
-  // Stats
   fpsFrames++;
   const now = performance.now();
   if (now - fpsLast >= 500) {
-    fpsValue = Math.round(fpsFrames * 1000 / (now - fpsLast));
+    const fps = Math.round(fpsFrames * 1000 / (now - fpsLast));
     fpsFrames = 0;
     fpsLast = now;
-    statFps.textContent = String(fpsValue);
+    statFps.textContent = String(fps);
   }
   statEye.textContent = `${eye.x.toFixed(0)}, ${eye.y.toFixed(0)}, ${eye.z.toFixed(0)} mm`;
 
