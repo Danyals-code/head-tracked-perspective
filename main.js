@@ -58,12 +58,12 @@ const DEFAULTS = {
   smooth: 0.80,
   sensitivity: 0.55,
   viewY: 0.00,     // eye vertical bias as fraction of monH; 0 = symmetric view (face-centered = scene-centered)
-  renderZoom: 1.0, // multiplier on effective FOV; >1 = zoom in (narrower frustum, bigger objects)
+  focal: 1.0,      // multiplier on virtual eye distance; >1 = telephoto (depth compression), <1 = wide
   showCam: true, flipX: true,
 };
 const p = { ...DEFAULTS };
 
-const sliderIds = ["depth", "fov", "ipd", "smooth", "sensitivity", "viewY", "renderZoom"];
+const sliderIds = ["depth", "fov", "ipd", "smooth", "sensitivity", "viewY", "focal"];
 const roomKeys  = new Set(["depth"]);
 const scaleKeys = new Set(["fov", "ipd"]);
 
@@ -82,7 +82,7 @@ function bindSliders() {
   });
 }
 function formatValue(id, v) {
-  if (id === "smooth" || id === "sensitivity" || id === "viewY" || id === "renderZoom") return v.toFixed(2);
+  if (id === "smooth" || id === "sensitivity" || id === "viewY" || id === "focal") return v.toFixed(2);
   return String(v);
 }
 
@@ -507,10 +507,11 @@ function loop() {
   }
   if (!detected) framesSinceDetection++;
 
-  // Divide effective screen by renderZoom -> narrower frustum -> zoom in.
-  const zw = eff.w / p.renderZoom;
-  const zh = eff.h / p.renderZoom;
-  setOffAxisProjection(camera, eye.x, eye.y, eye.z, zw, zh, 10, 6000);
+  // Multiply virtual eye Z by focal-length factor. Screen corners stay pinned
+  // to the frustum's four side planes (window illusion preserved), but the
+  // deeper the virtual eye, the more the projection compresses depth --
+  // real telephoto behaviour, not a flat crop.
+  setOffAxisProjection(camera, eye.x, eye.y, eye.z * p.focal, eff.w, eff.h, 10, 6000);
   renderer.render(scene, camera);
 
   if (!hasCalibrated)                 setTrackState("waiting", "Waiting for face");
