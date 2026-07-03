@@ -1,93 +1,166 @@
-# 3D Shelf — Head-Tracked Perspective
+# head-tracked-perspective
 
-A single-page web experiment: your monitor becomes a window looking into a
-shallow cuboid room. As you move your head in front of the webcam, the scene
-re-projects with off-axis perspective so the box appears fixed in physical
-space behind the glass.
+A browser demonstration of **head-coupled off-axis perspective**: the monitor
+becomes a fixed window into a small three-dimensional room. As you move your
+head in front of the webcam, the rendering updates in real time so the room
+appears anchored in physical space behind the glass — you look into it from
+different vantage points as you would through a real window.
 
-Runs 100% client-side. Video and face landmarks never leave the browser.
+Everything runs client-side. Camera video and face landmarks never leave the
+browser.
 
-## Try it locally
+**Live:** <https://danyals-code.github.io/head-tracked-perspective/>
 
-The browser blocks `getUserMedia` on `file://`, so serve the folder over
-`http://localhost`. Pick whichever is convenient:
+---
+
+## The technique
+
+This effect goes by several names in the literature, and is well-studied.
+
+- **Fish-tank virtual reality (FTVR)** — Ware, Arthur & Booth, *"Fish Tank
+  Virtual Reality"*, INTERACT '93 & CHI '93 (1993). The foundational paper.
+  They compared monoscopic, stereoscopic, and head-tracked displays for a
+  depth-judgment task and found that adding head coupling — even without
+  stereo — produced substantial improvement in perceived structure.
+- **Head-coupled perspective / head-tracked display** — the more descriptive
+  modern names.
+- **Motion-parallax display** — emphasises the specific depth cue being
+  synthesised.
+
+**Selected papers**
+
+- Deering, M. (1992). *"High resolution virtual reality."* SIGGRAPH '92.
+  Derives the corrected perspective for a head-tracked stereoscopic display
+  and shows why naive symmetric projection breaks the illusion.
+- Ware, C., Arthur, K., & Booth, K. S. (1993). *"Fish tank virtual reality."*
+  INTERACT '93 & CHI '93. The empirical case for FTVR.
+- Rekimoto, J. (1995). *"A vision-based head tracker for fish tank virtual
+  reality — VR without head gear."* IEEE VRAIS '95. Perhaps the first
+  camera-based (i.e. no marker, no tether) head tracking for FTVR — the same
+  category as this project.
+- Kooima, R. (2008). *"Generalized Perspective Projection."* A concise
+  derivation of the asymmetric-frustum construction used here.
+- Arsenault, R., & Ware, C. (2004). *"The importance of stereo and eye-coupled
+  perspective for eye-hand coordination in fish tank VR."* Presence 13(5).
+  Head coupling roughly equals stereo for many depth tasks; combined they
+  dominate.
+
+**In the wild**
+
+- Johnny Chung Lee's 2007 *"Head Tracking for Desktop VR Displays using the
+  Wii Remote"* demo — ~10 M YouTube views — brought the effect to a mass
+  audience and revived interest.
+- Nintendo 3DS briefly used front-camera head-tracked parallax for a "3D
+  without glasses" mode.
+- Amazon Fire Phone (2014) shipped four IR head-tracking cameras for a
+  feature it called *Dynamic Perspective* — a serious hardware effort and a
+  commercial flop.
+- iOS **parallax wallpapers** use device tilt (IMU) rather than head
+  tracking, but produce a similar cue.
+
+---
+
+## How this implementation works
+
+Two independent problems, composed:
+
+### 1. Where is your head, in millimetres?
+
+- MediaPipe **FaceLandmarker** runs in the browser via WebAssembly/GPU and
+  returns, per frame, a 4×4 *facial transformation matrix* that maps the
+  canonical face model into camera space. The last column is the head's
+  rigid-body translation in the camera's own frame — invariant to head
+  rotation, unlike raw eye-landmark midpoints.
+- Matrix units are not guaranteed to be millimetres, so we calibrate. The
+  apparent inter-pupillary distance in pixels, combined with an assumed
+  camera FOV and a real-world IPD (63 mm by default), gives a physical
+  distance-to-eye via the pinhole model. The ratio of that against the
+  matrix's Z component becomes our scale factor. Calibration is refreshed on
+  Recenter and whenever FOV/IPD change.
+
+### 2. Given eye position, how do we render?
+
+- The virtual screen sits fixed at *z = 0* with world dimensions matching
+  your monitor's glass. The 3D room extends into negative *z*.
+- Each frame we build an **asymmetric (off-axis) perspective frustum** whose
+  four side planes pass through the four screen corners and the eye. Kooima
+  (2008) shows this reduces to a single call:
+
+  ```
+  makePerspective(left, right, top, bottom, near, far)
+  ```
+
+  where each bound is proportional to the horizontal/vertical offset from
+  the eye to the corresponding screen edge, divided by the eye's distance
+  from the screen plane and multiplied by *near*.
+- The consequence: any point at *z = 0* — i.e. anywhere on the physical
+  screen — projects to the same pixel regardless of eye position. Only depth
+  parallaxes. That invariance is what sells the "fixed window" illusion.
+
+### Head sensitivity
+
+True fish-tank VR maps head displacement 1 : 1 into virtual eye
+displacement. Depending on room, seating distance, and personal preference
+this can feel too intense — so a sensitivity multiplier (default 0.55) scales
+the delta from the calibration pose on all three axes. Set to 1.0 for
+literal window physics; set to 0 to freeze the current view.
+
+---
+
+## Controls
+
+| Key      | Action                                         |
+| -------- | ---------------------------------------------- |
+| **F**    | Toggle fullscreen (recommended for the effect) |
+| **R**    | Recenter — your current pose becomes the reference (0, 0) |
+| **S**    | Toggle the settings panel                      |
+| **Esc**  | Close the settings panel                       |
+
+The settings panel exposes MacBook screen presets (Air 13" / 15", Pro 14" /
+16"), box depth, head sensitivity, webcam FOV, your IPD, smoothing, and a
+sign flip for the X axis in case the parallax comes out mirrored on your
+setup.
+
+---
+
+## Requirements
+
+- A desktop browser with WebGL2 and camera access — Chrome, Edge, Firefox,
+  or Safari on macOS or Windows.
+- A webcam. Even lighting helps.
+- The scene is tuned for MacBook screens; presets are built in.
+
+---
+
+## Development
+
+The project is a static site with no build step. Serve the folder over HTTP
+(the browser blocks camera access on `file://`):
 
 ```sh
-# Python 3
 python -m http.server 8000
-
-# Node
-npx --yes http-server -p 8000 -c-1
-
-# PowerShell + Node
-npx --yes serve -l 8000
+# then open http://localhost:8000
 ```
 
-Then open <http://localhost:8000> and click **Start**.
+Three.js and MediaPipe Tasks Vision are loaded as ES modules from a CDN.
 
-## Deploy to GitHub Pages
+### Deploy
 
-1. Create a new GitHub repo and push this folder to it.
+Any push to `main` triggers `.github/workflows/deploy.yml`, which publishes
+the repository root to GitHub Pages.
 
-    ```sh
-    git init
-    git add .
-    git commit -m "Initial: head-tracked 3D shelf"
-    git branch -M main
-    git remote add origin https://github.com/<you>/<repo>.git
-    git push -u origin main
-    ```
-
-2. On GitHub: **Settings → Pages**. Source: *Deploy from a branch*.
-   Branch: `main`, folder: `/ (root)`. Save.
-3. Wait ~1 min. Your site is live at `https://<you>.github.io/<repo>/`.
-   HTTPS is on by default, which the camera API requires.
-
-## Deploy to Vercel
-
-1. Import the repo at <https://vercel.com/new>.
-2. Framework Preset: **Other**. No build command, no output directory.
-3. Deploy. That's it — free tier covers this comfortably (static hosting only,
-   no serverless functions, no bandwidth surprises).
-
-## Calibration
-
-The illusion depends on realistic dimensions. Open **Settings** and set:
-
-| Setting                        | What to do                                         |
-|--------------------------------|----------------------------------------------------|
-| Monitor width / height         | Physical size of your screen's glass, in mm.       |
-| Box depth                      | How deep the virtual shelf should be.              |
-| Camera FOV                     | Most webcams: 55–70°. Adjust if depth feels off.   |
-| Your IPD                       | Inter-pupillary distance. 63 mm is a good default. |
-| Cam above screen top           | Distance from webcam lens to top of screen glass.  |
-| Flip head X                    | Toggle if the parallax appears reversed.           |
-
-Press **F** or click **Fullscreen** — the off-axis math assumes the canvas
-fills the physical monitor. Sit 30–80 cm away, move your head slowly, and the
-shelves should feel anchored behind the screen.
-
-## How it works
-
-- **Face landmarks:** MediaPipe FaceLandmarker (478-point mesh with iris)
-  runs in the browser via WebAssembly/GPU.
-- **Real-world eye position:** apparent iris-to-iris distance and an assumed
-  webcam horizontal FOV give distance via a pinhole model; image position
-  gives lateral/vertical offset in millimetres.
-- **Rendering:** [three.js](https://threejs.org/) with a manually built
-  asymmetric perspective frustum ("off-axis projection"). The four screen
-  corners become the frustum's four side planes, so points at z = 0 always
-  project to the same pixels — only depth parallaxes.
-
-## File layout
+### File layout
 
 ```
-index.html      — markup, overlay, controls
-styles.css      — dark UI
-main.js         — three.js scene, off-axis camera, main loop
-tracker.js      — MediaPipe FaceLandmarker wrapper
-.nojekyll       — tell GitHub Pages not to Jekyll-process the site
+index.html                     markup, settings panel, welcome screen
+main.js                        Three.js scene, tracking, off-axis projection
+tracker.js                     MediaPipe FaceLandmarker wrapper
+styles.css                     dark UI
+.github/workflows/deploy.yml   Pages deploy workflow
 ```
 
-No build step, no dependencies to install. Three.js and MediaPipe are loaded
-as ES modules from a CDN.
+---
+
+## License
+
+Personal experiment. No warranty. Fork and adapt freely.

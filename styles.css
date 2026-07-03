@@ -542,6 +542,35 @@ code {
   font-weight: 400;
 }
 
+/* Standalone label (used above dropdown) */
+.control-label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+/* Select / dropdown */
+.select {
+  width: 100%;
+  padding: 9px 34px 9px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a7adba' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9 L12 15 L18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease);
+}
+.select:hover { border-color: #3a4051; background-color: #232935; }
+.select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.select option { background: var(--bg-elevated); color: var(--text-primary); }
+
 /* Range input styling */
 input[type="range"] {
   -webkit-appearance: none;
