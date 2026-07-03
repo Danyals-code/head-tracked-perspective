@@ -1,5 +1,5 @@
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
-import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/environments/RoomEnvironment.js";
+import * as THREE from "three";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { createTracker, IRIS_A, IRIS_B } from "./tracker.js";
 
 // ---------- DOM ----------
@@ -44,11 +44,12 @@ const DEFAULTS = {
   ipd: 63,
   smooth: 0.80,
   sensitivity: 0.55,
+  viewY: 0.40,     // eye vertical bias as fraction of monH (positive = look down into box)
   showCam: true, flipX: true,
 };
 const p = { ...DEFAULTS };
 
-const sliderIds = ["depth", "fov", "ipd", "smooth", "sensitivity"];
+const sliderIds = ["depth", "fov", "ipd", "smooth", "sensitivity", "viewY"];
 const roomKeys  = new Set(["depth"]);
 const scaleKeys = new Set(["fov", "ipd"]);
 
@@ -67,7 +68,7 @@ function bindSliders() {
   });
 }
 function formatValue(id, v) {
-  if (id === "smooth" || id === "sensitivity") return v.toFixed(2);
+  if (id === "smooth" || id === "sensitivity" || id === "viewY") return v.toFixed(2);
   return String(v);
 }
 
@@ -469,14 +470,17 @@ function loop() {
         offset.z = rawZ;
         recenterRequested = false;
         hasCalibrated = true;
-        target.set(0, 0, offset.z);
+        target.set(0, p.viewY * p.monH, offset.z);
         eye.copy(target);
       } else {
         // Apply sensitivity: 0 freezes at calibration pose, 1 = true window physics.
+        // Vertical view bias renders the natural pose as "looking down into the box"
+        // so the floor extends toward the viewer and lines up with the physical keyboard.
         const k = p.sensitivity;
+        const yBias = p.viewY * p.monH;
         target.set(
           (rawX - offset.x) * k,
-          (rawY - offset.y) * k,
+          (rawY - offset.y) * k + yBias,
            offset.z + (rawZ - offset.z) * k,
         );
         eye.lerp(target, 1 - p.smooth);
