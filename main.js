@@ -34,6 +34,19 @@ const MAC_PRESETS = {
   pro16: { w: 346, h: 223, fov: 68 },
 };
 
+// Effective on-screen dimensions of the canvas, in mm. Recomputed on resize /
+// preset change so the off-axis frustum matches the ACTUAL window, not the whole
+// display. Fullscreen -> equals p.monW/p.monH; windowed -> smaller.
+const eff = { w: 302, h: 196 };
+function refreshEff() {
+  const sw   = window.screen.width  || 1512;
+  const sh   = window.screen.height || 982;
+  const cssW = canvas.clientWidth   || sw;
+  const cssH = canvas.clientHeight  || sh;
+  eff.w = p.monW * cssW / sw;
+  eff.h = p.monH * cssH / sh;
+}
+
 // ---------- Params (mm unless noted) ----------
 const DEFAULTS = {
   model: "pro14",
@@ -213,8 +226,9 @@ function disposeGroup(group) {
 }
 
 function rebuildRoom() {
+  refreshEff();
   disposeGroup(roomGroup);
-  const w = p.monW, h = p.monH, d = p.depth;
+  const w = eff.w, h = eff.h, d = p.depth;
 
   // Palette — muted interior against warm floor. Metallic objects will pick up the env map.
   const wallMat  = new THREE.MeshStandardMaterial({ color: 0x2a2f3a, roughness: 0.92, metalness: 0.0 });
@@ -279,7 +293,7 @@ function rebuildRoom() {
 }
 
 function placeObjects() {
-  const w = p.monW, h = p.monH, d = p.depth;
+  const w = eff.w, h = eff.h, d = p.depth;
   const floorY = -h / 2;
   const s = Math.min(w, h) * 0.14;    // base scale unit — bigger than before
 
@@ -333,6 +347,7 @@ function setOffAxisProjection(cam, ex, ey, ez, screenW, screenH, near, far) {
 
 window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight, false);
+  rebuildRoom();
 });
 
 // ---------- Face tracking (matrix-based) ----------
@@ -470,14 +485,14 @@ function loop() {
         offset.z = rawZ;
         recenterRequested = false;
         hasCalibrated = true;
-        target.set(0, p.viewY * p.monH, offset.z);
+        target.set(0, p.viewY * eff.h, offset.z);
         eye.copy(target);
       } else {
         // Apply sensitivity: 0 freezes at calibration pose, 1 = true window physics.
         // Vertical view bias renders the natural pose as "looking down into the box"
         // so the floor extends toward the viewer and lines up with the physical keyboard.
         const k = p.sensitivity;
-        const yBias = p.viewY * p.monH;
+        const yBias = p.viewY * eff.h;
         target.set(
           (rawX - offset.x) * k,
           (rawY - offset.y) * k + yBias,
@@ -491,7 +506,7 @@ function loop() {
   }
   if (!detected) framesSinceDetection++;
 
-  setOffAxisProjection(camera, eye.x, eye.y, eye.z, p.monW, p.monH, 10, 6000);
+  setOffAxisProjection(camera, eye.x, eye.y, eye.z, eff.w, eff.h, 10, 6000);
   renderer.render(scene, camera);
 
   if (!hasCalibrated)                 setTrackState("waiting", "Waiting for face");
