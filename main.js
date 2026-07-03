@@ -44,7 +44,7 @@ const DEFAULTS = {
   ipd: 63,
   smooth: 0.80,
   sensitivity: 0.55,
-  viewY: 0.40,     // eye vertical bias as fraction of monH (positive = look down into box)
+  viewY: 0.00,     // eye vertical bias as fraction of monH; 0 = symmetric view (face-centered = scene-centered)
   showCam: true, flipX: true,
 };
 const p = { ...DEFAULTS };
