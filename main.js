@@ -58,11 +58,12 @@ const DEFAULTS = {
   smooth: 0.80,
   sensitivity: 0.55,
   viewY: 0.00,     // eye vertical bias as fraction of monH; 0 = symmetric view (face-centered = scene-centered)
+  renderZoom: 1.0, // multiplier on effective FOV; >1 = zoom in (narrower frustum, bigger objects)
   showCam: true, flipX: true,
 };
 const p = { ...DEFAULTS };
 
-const sliderIds = ["depth", "fov", "ipd", "smooth", "sensitivity", "viewY"];
+const sliderIds = ["depth", "fov", "ipd", "smooth", "sensitivity", "viewY", "renderZoom"];
 const roomKeys  = new Set(["depth"]);
 const scaleKeys = new Set(["fov", "ipd"]);
 
@@ -81,7 +82,7 @@ function bindSliders() {
   });
 }
 function formatValue(id, v) {
-  if (id === "smooth" || id === "sensitivity" || id === "viewY") return v.toFixed(2);
+  if (id === "smooth" || id === "sensitivity" || id === "viewY" || id === "renderZoom") return v.toFixed(2);
   return String(v);
 }
 
@@ -506,7 +507,10 @@ function loop() {
   }
   if (!detected) framesSinceDetection++;
 
-  setOffAxisProjection(camera, eye.x, eye.y, eye.z, eff.w, eff.h, 10, 6000);
+  // Divide effective screen by renderZoom -> narrower frustum -> zoom in.
+  const zw = eff.w / p.renderZoom;
+  const zh = eff.h / p.renderZoom;
+  setOffAxisProjection(camera, eye.x, eye.y, eye.z, zw, zh, 10, 6000);
   renderer.render(scene, camera);
 
   if (!hasCalibrated)                 setTrackState("waiting", "Waiting for face");
